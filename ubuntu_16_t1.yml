@@ -1,0 +1,54 @@
+---
+- name: System Administration Playbook
+  hosts: all
+  become: yes
+  connection: ssh
+
+  tasks:
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        upgrade: yes
+
+    - name: Update SSH configuration
+      lineinfile:
+        dest: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^Port\s+', line: 'Port 22' }
+        - { regexp: '^PermitRootLogin\s+', line: 'PermitRootLogin no' }
+        - { regexp: '^PermitEmptyPasswords\s+', line: 'PermitEmptyPasswords no' }
+
+    - name: Restart SSH service
+      service:
+        name: ssh
+        state: restarted
+
+    - name: Add kernel security hardening configurations to sysctl.conf
+      lineinfile:
+        dest: /etc/sysctl.conf
+        line: "{{ item }}"
+        insertafter: EOF
+      loop:
+        - 'net.ipv4.icmp_echo_ignore_all = 1'
+        - 'net.ipv4.icmp_echo_ignore_broadcasts = 1'
+        - 'net.ipv6.conf.all.disable_ipv6 = 1'
+        - 'net.ipv6.conf.default.disable_ipv6 = 1'
+        - 'net.ipv6.conf.lo.disable_ipv6 = 1'
+
+    - name: Apply sysctl changes
+      command: sysctl -p
+
+    - name: Stop and disable UFW
+      systemd:
+        name: ufw
+        state: stopped
+        enabled: no
+
+    - name: Configure cron.allow and cron.deny
+      copy:
+        content: |
+          root
+        dest: /etc/cron.allow
+        mode: '0644'
