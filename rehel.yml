@@ -1,0 +1,114 @@
+---
+- name: Update system and secure SSH
+  hosts: all
+  become: yes
+  connection: ssh
+
+  tasks:
+    - name: Check for available updates
+      yum:
+        list: updates
+      register: yum_updates
+      ignore_errors: yes
+
+    - name: Perform system updates
+      yum:
+        name: '*'
+        state: latest
+      when: yum_updates.changed
+
+    - name: Secure SSH configuration
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        state: "{{ item.state }}"
+      with_items:
+        - { regexp: '^Port', line: 'Port 22', state: present }
+        - { regexp: '^PermitRootLogin', line: 'PermitRootLogin no', state: present }
+        - { regexp: '^PermitEmptyPasswords', line: 'PermitEmptyPasswords no', state: present }
+
+    - name: Set LogLevel to VERBOSE
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?LogLevel'
+        line: 'LogLevel VERBOSE'
+        state: present
+
+    - name: Harden Linux kernel
+      lineinfile:
+        path: /etc/sysctl.conf
+        line: "{{ item }}"
+        insertafter: EOF
+      with_items:
+        - 'net.ipv4.icmp_echo_ignore_all = 1'
+        - 'net.ipv4.icmp_echo_ignore_broadcasts = 1'
+
+    - name: Apply changes in sysctl.conf
+      command: sysctl -p
+
+    - name: Configure iptables rules
+      blockinfile:
+        path: /etc/sysconfig/iptables
+        block: |
+          *filter
+          :INPUT DROP [0:0]
+          :FORWARD ACCEPT [0:0]
+          :OUTPUT ACCEPT [0:0]
+          -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+          -A INPUT -p tcp --dport 80 -j ACCEPT
+          -A INPUT -p tcp --dport 22 -j ACCEPT
+          COMMIT
+
+    - name: Restart iptables service
+      service:
+        name: iptables
+        state: restarted
+
+    - name: Restart SSH service
+      service:
+        name: sshd
+        state: restarted
+
+    - name: Install fail2ban
+      yum:
+        name: fail2ban
+        state: present
+
+    - name: Copy fail2ban configuration file
+      copy:
+        src: /etc/fail2ban/jail.conf
+        dest: /etc/fail2ban/jail.local
+
+    - name: Set fail2ban configurations
+      lineinfile:
+        path: /etc/fail2ban/jail.local
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      with_items:
+        - { regexp: '^ignoreip', line: 'ignoreip = 127.0.0.1/8' }
+        - { regexp: '^bantime', line: 'bantime = 600' }
+        - { regexp: '^findtime', line: 'findtime = 600' }
+        - { regexp: '^maxretry', line: 'maxretry = 3' }
+        - { regexp: '^backend', line: 'backend = auto' }
+        - { regexp: '^usedns', line: 'usedns = warn' }
+        - { regexp: '^destemail', line: 'destemail = root@localhost' }
+        - { regexp: '^banaction', line: 'banaction = iptables-multiport' }
+        - { regexp: '^mta', line: 'mta = sendmail' }
+        - { regexp: '^protocol', line: 'protocol = tcp' }
+        - { regexp: '^chain', line: 'chain = INPUT' }
+        - { regexp: '^port', line: 'port = 0:65535' }
+
+    - name: Restart fail2ban service
+      service:
+        name: fail2ban
+        state: restarted
+        
+    - name: Restart the server
+      command: reboot
+      async: 1
+      poll: 0
+      ignore_errors: yes
+
+  
+
