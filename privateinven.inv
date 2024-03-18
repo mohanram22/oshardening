@@ -1,2 +1,0 @@
-[private_servers]
-private_server ansible_host=192.168.1.88 ansible_port=22
