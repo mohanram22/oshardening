@@ -3,10 +3,10 @@ all:
     bastion:
       ansible_host: 18.246.215.236:22
       ansible_user: ec2-user
-      ansible_ssh_private_key_file: bastion.pem
+      ansible_ssh_private_key_file: /home/ansible/.ssh/bastion.pem
 
     private_server:
       ansible_host: 192.168.1.11:22
       ansible_user: ec2-user
-      ansible_ssh_private_key_file: bastion.pem
-      ansible_ssh_common_args: '-o ProxyCommand="ssh -W %h:%p -i bastion.pem -l ec2-user 18.246.215.236"'
+      ansible_ssh_private_key_file: /home/ansible/.ssh/bastion.pem
+      ansible_ssh_common_args: '-o ProxyCommand="ssh -W %h:%p -i /home/ansible/.ssh/bastion.pem -l ec2-user 18.246.215.236"'
