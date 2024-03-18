@@ -1,0 +1,95 @@
+---
+- name: Keep System Updated and Secure SSH
+  hosts: private_server
+  become: yes
+  connection: ssh
+
+  tasks:
+    - name: Perform system update
+      zypper:
+        name: '*'
+        state: latest
+
+    - name: Secure SSH configuration
+      lineinfile:
+        dest: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        state: present
+      with_items:
+        - { regexp: '^Port', line: 'Port 22' }
+        - { regexp: '^PermitRootLogin', line: 'PermitRootLogin no' }
+        - { regexp: '^PermitEmptyPasswords', line: 'PermitEmptyPasswords no' }
+
+    - name: Enable Detailed Logging for SSH
+      lineinfile:
+        dest: /etc/ssh/sshd_config
+        regexp: '^LogLevel'
+        line: 'LogLevel VERBOSE'
+        state: present
+
+    - name: Linux Kernel Security Hardening
+      lineinfile:
+        dest: /etc/sysctl.conf
+        line: "{{ item }}"
+        state: present
+      with_items:
+        - 'net.ipv4.icmp_echo_ignore_all=1'
+        - 'net.ipv4.icmp_echo_ignore_broadcasts=1'
+        - 'net.ipv6.conf.all.disable_ipv6=1'
+        - 'net.ipv6.conf.default.disable_ipv6=1'
+        - 'net.ipv6.conf.lo.disable_ipv6=1'
+
+    - name: Reload sysctl configuration
+      command: sysctl -p
+
+    - name: Check if IPv6 is disabled
+      command: cat /proc/sys/net/ipv6/conf/all/disable_ipv6
+      register: ipv6_status
+
+    - debug:
+        msg: "IPv6 is {{ 'disabled' if ipv6_status.stdout == '1' else 'enabled' }}"
+
+    - name: Restart server if IPv6 is enabled
+      when: ipv6_status.stdout == '0'
+      reboot:
+        reboot_timeout: 300
+        msg: "IPv6 is enabled. Restarting the server to apply changes."
+
+    - name: Restart SSH service
+      service:
+        name: sshd
+        state: restarted
+    
+    - name: Restrict Cronjobs
+      block:
+        - name: Create cron.allow file and allow root
+          lineinfile:
+            path: /etc/cron.allow
+            line: 'root'
+            create: yes
+          become: yes
+
+        - name: Remove cron.deny file
+          file:
+            path: /etc/cron.deny
+            state: absent
+          become: yes
+      become: yes
+
+    - name: Create directory for SSM Agent installation
+      file:
+        path: /tmp/ssm
+        state: directory
+
+    - name: Download and Install SSM Agent
+      command: "wget https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm -P /tmp/ssm"
+      
+    - name: Upgrade SSM Agent
+      command: "sudo rpm -U /tmp/ssm/amazon-ssm-agent.rpm"
+      
+    - name: Enable and Start SSM Agent service
+      systemd:
+        name: amazon-ssm-agent
+        enabled: yes
+        state: started
