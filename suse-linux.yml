@@ -87,6 +87,8 @@
       
     - name: Upgrade SSM Agent
       command: "sudo rpm -U /tmp/ssm/amazon-ssm-agent.rpm"
+      ignore_errors: yes
+      when: "'amazon-ssm-agent-3.3.131.0-1.x86_64' not in ansible_facts.packages"
       
     - name: Enable and Start SSM Agent service
       systemd:
